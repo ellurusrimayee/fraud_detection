@@ -26,6 +26,7 @@ public class Payment {
 	private String Currency_Code;
 	private String TXN_Level;
 	private String FALCONE_Score;
+	private String paymentStatus;
 	public Long getId() {
 		return id;
 	}
@@ -104,6 +105,12 @@ public class Payment {
 	public void setFALCONE_Score(String fALCONE_Score) {
 		FALCONE_Score = fALCONE_Score;
 	}
+	public String getPaymentStatus() {
+		return paymentStatus;
+	}
+	public void setPaymentStatus(String paymentStatus) {
+		this.paymentStatus = paymentStatus;
+	}
 	public Payment() {
 		super();
 		// TODO Auto-generated constructor stub
@@ -114,8 +121,7 @@ public class Payment {
 				+ toAccount + ", TXN_Amount=" + TXN_Amount + ", transactionId=" + transactionId + ", merchantName="
 				+ merchantName + ", MCC=" + MCC + ", POS_Entry_Code=" + POS_Entry_Code + ", FWES_Code=" + FWES_Code
 				+ ", Currency_Code=" + Currency_Code + ", TXN_Level=" + TXN_Level + ", FALCONE_Score=" + FALCONE_Score
-				+ "]";
+				+", paymentStatus=" + paymentStatus+ "]";
 	}
-	
 	
 }

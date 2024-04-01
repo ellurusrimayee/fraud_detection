@@ -12,7 +12,7 @@ import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Random;
-
+import java.util.Scanner;
 
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.SSLContext;
@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
@@ -46,13 +47,14 @@ public class PaymentController {
 	private JavaMailSender mailSender;
 
 	long transId=0;
-	String result=null;
 	String customerEmail=null;
 	String customerName="";
+	String result=null;
 	long mfaotp=0;
+	int statusflag=0;
 
 	@GetMapping("frauddetect")
-	public void method(Payment payment) throws IOException {
+	public String method(Payment payment) throws IOException {
 	    // DataRobot API endpoint URL
 	    URL url = new URL("https://hexaware-technologies-limited-partner.dynamic.orm.datarobot.com/predApi/v1.0/deployments/65fc219434934626bfa99ee7/predictions");
 
@@ -67,7 +69,7 @@ public class PaymentController {
 	    System.out.println(payment.getTXN_Amount());
 	    // Construct the request payload without average transaction amount
 	    String data = "[{" +
-	    		"\"MCC\": " + payment.getMCC() + "," +
+	            "\"MCC\": " + payment.getMCC() + "," +
 	            "\n\"TXN_Amount\": " + payment.getTXN_Amount() + "," +
 	            "\n\"POS_Entry_Code\": " + payment.getPOS_Entry_Code() + "," +
 	            "\n\"FWES_Code\": \"" + payment.getFWES_Code() + "\"," +
@@ -101,6 +103,7 @@ public class PaymentController {
 
 	    // Close connection
 	    http.disconnect();
+	    return prediction;
 	}
 
 	   @PostMapping("/paymentadd")
@@ -124,11 +127,51 @@ public class PaymentController {
 	        System.out.println("generated--------------------------------" + refno);
 	        System.out.println("copied-----------------------------------" + transId);
 	        payment.setTransactionId(refno);
+	        String prediction =method(payment);
+	        if (prediction.equals("Approve")) {
+	            // If prediction is approve, set payment status to successful
+	            payment.setPaymentStatus("Successful");
+	        } else if (prediction.equals("Decline")) {
+	            // If prediction is decline, send OTP to user email
+	            String otpStatus = sendOtpToEmail(payment.getUserEmail());
+	            if (otpStatus.equals("sent")) {
+	            	Scanner sc=new Scanner(System.in);
+	            	long enteredotp=sc.nextLong();
+	                String otpVerify=otpverification(enteredotp);
+	                if(otpVerify.equals("correct")) {
+	                	payment.setPaymentStatus("Success");
+	                }
+	                else {
+	                payment.setPaymentStatus("Failure");
+	                }
+	            } else {
+	                // If OTP sending fails, set payment status to failure
+	                payment.setPaymentStatus("Failure");
+	            }
+	        }
+	        
+	        // Save payment details to the database
 	        Long beneficiary = payment.getToAccount();
 	        paymentrepository.save(payment);
-	        method(payment);
+	        
+	        // Return the payment object
 	        return payment;
 	    }
+		
+	   
+		
+		@GetMapping("/getbytransactionId/{transactionId}")
+		public Payment getPaymentByTransId(@PathVariable Long transactionId) {
+			
+			return paymentrepository.findByTransactionId(transactionId);
+		}
+		
+		@GetMapping("/findemail/{userEmail}")
+		public Payment getPaymentByEmail(@PathVariable String userEmail) {
+			 return paymentrepository.findByUserEmail(userEmail);
+		}
+		
+		
 
 	   @GetMapping("/sendotp/{userEmail}")
 		public String sendOtpToEmail(@PathVariable String userEmail) {
@@ -146,9 +189,9 @@ public class PaymentController {
 			        otp = otp * 10 + n;
 			        }
 			mfaotp=otp;
-			System.out.println("otp copied "+mfaotp);
+			System.out.println("otp copied ----------------------"+mfaotp);
 			try {
-				System.out.println("Reached inside here");
+				System.out.println("Reached here");
 				SSL();
 				MimeMessage mimeMessage = mailSender.createMimeMessage();
 				MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true);
@@ -180,6 +223,53 @@ public class PaymentController {
 			else {
 				return "fail";
 			}
+		}
+	   @GetMapping("/otpverify/{otp}")
+		public String otpverification(@PathVariable Long otp) {
+		   Payment payment = new Payment();
+			if(otp!=mfaotp) {
+				payment.setPaymentStatus("Failed");
+				System.out.println("typed "+otp);
+				System.out.println("mfaotp "+mfaotp);
+				try {
+					System.out.println("1 ");
+					SSL();
+					MimeMessage mimeMessage = mailSender.createMimeMessage();
+					MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true);
+					helper.setFrom("paymentfrauddetect@gmail.com");
+				//	helper.setFrom("harvis.hexawarebanking@gmail.com");
+					helper.setTo(customerEmail);
+					//helper.setTo("gayathrikanagaraj28@gmail.com");
+					helper.setSubject("Incorrect OTP Alert ");
+					System.out.println("2 ");
+					helper.setText( "<html>"+ "<body>"
+					+ "<div>Hi,</div><br>"
+					+"<div>This is to inform you that your transaction has recalled due to incorrect OTP.</div><br><br><br>"
+					+"<div>Please contact the bank for any clarifications</div><br><br><br>"
+					+"<div>Thanks & Regards,</div><br>"
+					+"<div>Hexaware Banking</div>"
+					
+					+ "<img src='cid:leftSideImage' style='float:left;width:20%;height:20%;'/>" +  "</body>"
+				            + "</html>", true);
+				     
+				     helper.addInline("leftSideImage", new File("banking_logo.png"));
+				     System.out.println("3 ");
+				     mailSender.send(mimeMessage);
+
+					System.out.println("Email sending complete.");
+					
+				} catch (Exception e) {
+					
+					System.out.println(e);
+					e.printStackTrace();
+				}
+				return "wrong";
+			}
+			else {
+				payment.setPaymentStatus("Successful");
+				return "correct";
+			}
+			
 		}
 	   public void SSL() {
 			SSLContext ctx;
